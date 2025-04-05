@@ -1,0 +1,171 @@
+import json
+import torch
+import numpy as np
+import faiss
+from sentence_transformers import SentenceTransformer
+from transformers import T5ForConditionalGeneration, T5Tokenizer
+
+
+class ScrumChatbot:
+    def __init__(self, dataset_path='topic_qa_dataset.json'):
+        """
+        Initialize Scrum Chatbot with improved RAG capabilities
+
+        Args:
+            dataset_path (str): Path to the generated QA dataset
+        """
+        # Load dataset
+        with open(dataset_path, 'r', encoding='utf-8') as f:
+            self.dataset = json.load(f)
+
+        # Prepare embedding model
+        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+        # Prepare generation model (optional, for fallback)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.tokenizer = T5Tokenizer.from_pretrained('google/flan-t5-base')
+        self.generation_model = T5ForConditionalGeneration.from_pretrained('google/flan-t5-base').to(self.device)
+
+        # Prepare embeddings and index
+        self.prepare_embeddings()
+
+    def prepare_embeddings(self):
+        """
+        Create embeddings for all questions and prepare Faiss index
+        """
+        self.questions = []
+        self.answers = []
+        self.contexts = []
+
+        for topic, topic_data in self.dataset.items():
+            context = topic_data['context']
+            for qa_pair in topic_data['qa_pairs']:
+                self.questions.append(qa_pair['question'])
+                self.answers.append(qa_pair['answer'])
+                self.contexts.append(context)
+
+        # Create embeddings
+        self.question_embeddings = self.embedding_model.encode(self.questions)
+
+        # Create Faiss index
+        dimension = self.question_embeddings.shape[1]
+        self.index = faiss.IndexFlatL2(dimension)
+        self.index.add(np.array(self.question_embeddings).astype('float32'))
+
+    def find_most_similar_question(self, query, top_k=3):
+        """
+        Find most similar questions to the user's query
+
+        Args:
+            query (str): User's input question
+            top_k (int): Number of top similar questions to retrieve
+
+        Returns:
+            list: Top similar questions, answers, and contexts
+        """
+        # Embed query
+        query_embedding = self.embedding_model.encode([query])
+
+        # Search in Faiss index
+        distances, indices = self.index.search(query_embedding, top_k)
+
+        results = []
+        for idx in indices[0]:
+            results.append({
+                'question': self.questions[idx],
+                'answer': self.answers[idx],
+                'context': self.contexts[idx],
+                'distance': distances[0][list(indices[0]).index(idx)]
+            })
+
+        return results
+
+    def generate_response(self, query):
+        """
+        Generate a response using direct answer retrieval with fallback
+
+        Args:
+            query (str): User's input question
+
+        Returns:
+            str: Retrieved or generated response
+        """
+        # Find similar questions
+        similar_results = self.find_most_similar_question(query)
+
+        # Confidence threshold (adjust as needed)
+        SIMILARITY_THRESHOLD = 1.5  # Lower means stricter matching
+
+        # Sort results by distance
+        similar_results.sort(key=lambda x: x['distance'])
+
+        # If the most similar question is close enough, use its answer
+        if similar_results and similar_results[0]['distance'] < SIMILARITY_THRESHOLD:
+            best_match = similar_results[0]
+            return best_match['answer']
+
+        # Fallback to generation if no good match
+        context = " ".join([
+            f"Related Question: {r['question']}\nContext: {r['context']}\nAnswer: {r['answer']}"
+            for r in similar_results
+        ])
+
+        # Prepare prompt for generation
+        prompt = f"""
+        Context Information:
+        {context}
+
+        User Query: {query}
+
+        Generate a concise and precise answer based on the context and query:
+        """
+
+        # Tokenize input
+        inputs = self.tokenizer.encode(
+            prompt,
+            return_tensors="pt",
+            max_length=512,
+            truncation=True
+        ).to(self.device)
+
+        # Generate response
+        outputs = self.generation_model.generate(
+            inputs,
+            max_length=200,
+            num_return_sequences=1,
+            do_sample=True,
+            top_k=50,
+            top_p=0.95,
+            temperature=0.7
+        )
+
+        # Decode response
+        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        return response
+
+    def chat(self):
+        """
+        Interactive chat interface
+        """
+        print("Scrum Chatbot: Hello! I'm ready to answer your questions about Scrum. Type 'exit' to end.")
+
+        while True:
+            query = input("You: ")
+
+            if query.lower() == 'exit':
+                print("Scrum Chatbot: Goodbye!")
+                break
+
+            response = self.generate_response(query)
+            print("Scrum Chatbot:", response)
+            print("\n")
+
+
+def main():
+    chatbot = ScrumChatbot()
+    chatbot.chat()
+
+
+if __name__ == "__main__":
+    main()
