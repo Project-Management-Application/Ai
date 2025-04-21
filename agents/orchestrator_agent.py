@@ -68,6 +68,43 @@ class OrchestratorAgent:
 
         return False
 
+    def is_out_of_domain(self, query):
+        """
+        Determine if a query is likely outside the domain of our QA dataset
+        or just a casual/conversational input
+
+        Args:
+            query (str): The user's query
+
+        Returns:
+            bool: True if this appears to be out of domain
+        """
+        # Check for very short queries
+        if len(query.split()) <= 3:
+            return True
+
+        # Check for common conversational phrases
+        casual_phrases = [
+            "hello", "hi", "hey", "yoo", "what's up", "how are you",
+            "what?", "huh?", "ok", "nice", "thanks", "thank you"
+        ]
+
+        query_lower = query.lower()
+        for phrase in casual_phrases:
+            if query_lower.startswith(phrase) or query_lower == phrase:
+                return True
+
+        # You could also check if the query contains any domain-related keywords
+        domain_keywords = ["scrum", "kanban", "agile", "project", "sprint",
+                           "backlog", "methodology", "team", "product owner"]
+
+        # If none of the domain keywords are present, likely out of domain
+        if not any(keyword in query_lower for keyword in domain_keywords):
+            return True
+
+        return False
+
+
     def toggle_conversation_mode(self, value=None):
         """
         Toggle or set the conversation mode
@@ -134,7 +171,7 @@ class OrchestratorAgent:
             self.last_response = user_correction
             return user_correction
 
-        # First check for special queries
+        # After checking for special queries
         special_response = self.special_queries_agent.process(query)
         if special_response:
             # Store the interaction for potential future correction
@@ -142,9 +179,16 @@ class OrchestratorAgent:
             self.last_response = special_response
             return special_response
 
-        # Find similar questions and contexts
-        similar_results = self.retrieval_agent.retrieve(query)
+        # Check if query is out of domain or just conversational
+        if self.is_out_of_domain(query):
+            # Skip retrieval and go straight to Mistral
+            response = self.generation_agent.generate_fallback(query)
+            self.last_query = query
+            self.last_response = response
+            return response
 
+        # Find similar questions and contexts (only if we think it's an in-domain query)
+        similar_results = self.retrieval_agent.retrieve(query)
         # UPDATED LOGIC: Always use generation agent to enhance answers
         if similar_results:
             # If we have good retrieval results, use them with the generation agent

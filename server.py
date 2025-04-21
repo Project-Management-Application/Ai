@@ -22,4 +22,4 @@ def chat():
     return jsonify({"response": bot_reply})
 
 if __name__ == '__main__':
-    app.run(host='192.168.1.53', port=5000, debug=True)
+    app.run(host='10.30.30.26', port=5000, debug=True)

@@ -4,3 +4,4 @@ data/
 # Ignore any file named api_key.txt anywhere in the project
 api_key.txt
 **/api_key.txt
+database
