@@ -5,3 +5,6 @@ data/
 api_key.txt
 **/api_key.txt
 database
+yolov5s.pt
+yolov5/
+uml_dataset

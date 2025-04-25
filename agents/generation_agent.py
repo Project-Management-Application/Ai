@@ -1,32 +1,22 @@
-# agents/generation_agent.py
 import requests
 import json
 
 
 class GenerationAgent:
-    def __init__(self, api_key_path="api_key.txt", model_id="mistralai/Mistral-7B-Instruct-v0.1"):
+    def __init__(self, model_id="mistral"):
         """
-        Agent responsible for generating responses using Hugging Face API for Mistral
+        Agent responsible for generating responses using Ollama's local Mistral model
 
         Args:
-            api_key_path (str): Path to file containing the Hugging Face API key
-            model_id (str): Hugging Face model ID
+            model_id (str): Ollama model ID (default: mistral, referring to mistral:7b-instruct)
         """
-        # Load API key
-        try:
-            with open(api_key_path, 'r') as f:
-                self.api_key = f.read().strip()
-                print("Successfully loaded Hugging Face API key")
-        except FileNotFoundError:
-            raise FileNotFoundError(f"API key file not found at {api_key_path}")
+        # Ollama API endpoint (localhost)
+        self.api_url = "http://localhost:11434/api/generate"
+        self.model_id = model_id
 
-        # Hugging Face API endpoint
-        self.api_url = f"https://api-inference.huggingface.co/models/{model_id}"
-        self.headers = {"Authorization": f"Bearer {self.api_key}"}
-
-    def _call_huggingface_api(self, payload):
+    def _call_ollama_api(self, payload):
         """
-        Call the Hugging Face API
+        Call the Ollama API with streaming support
 
         Args:
             payload (dict): API request payload
@@ -35,27 +25,27 @@ class GenerationAgent:
             str: Generated text
         """
         try:
-            response = requests.post(self.api_url, headers=self.headers, json=payload)
+            # Enable streaming by setting stream=True
+            response = requests.post(self.api_url, json=payload, stream=True)
             response.raise_for_status()  # Raise exception for HTTP errors
 
-            result = response.json()
-
-            # Extract the generated text
-            if isinstance(result, list) and len(result) > 0:
-                return result[0].get("generated_text", "")
-            elif "generated_text" in result:
-                return result["generated_text"]
-            else:
-                print(f"Unexpected API response format: {result}")
-                return "Error: Unexpected API response format"
+            full_response = ""
+            for line in response.iter_lines():
+                if line:
+                    result = json.loads(line.decode('utf-8'))
+                    if "response" in result:
+                        full_response += result["response"]
+                    if result.get("done", False):
+                        break
+            return full_response.strip()
 
         except requests.exceptions.RequestException as e:
             print(f"API request failed: {e}")
-            return f"Error calling Hugging Face API: {str(e)}"
+            return f"Error calling Ollama API: {str(e)}"
 
     def generate(self, query, similar_results, temperature=0.7):
         """
-        Generate a response using the Hugging Face API for Mistral
+        Generate a response using the Ollama Mistral model
 
         Args:
             query (str): User's query
@@ -65,7 +55,7 @@ class GenerationAgent:
         Returns:
             str: Generated response
         """
-        # Construct context from similar results
+        # Construct context from similar_results
         context_parts = []
         for result in similar_results:
             context_parts.append(f"Related Question: {', '.join(result['questions'])}")
@@ -90,20 +80,15 @@ Please improve upon the retrieved answers by adding additional context, explanat
 
         # Call API
         payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": 1024,
-                "temperature": temperature,
-                "top_p": 0.95,
-                "do_sample": True
-            }
+            "model": self.model_id,
+            "prompt": prompt,
+            "temperature": temperature,
+            "max_tokens": 1024,
+            "top_p": 0.95
+            # Streaming enabled by default (no "stream": False)
         }
 
-        response = self._call_huggingface_api(payload)
-
-        # Extract only the model's response (remove the prompt)
-        if prompt in response:
-            response = response.replace(prompt, "").strip()
+        response = self._call_ollama_api(payload)
 
         return response
 
@@ -128,19 +113,14 @@ Provide a clear, well-structured response with examples if appropriate. [/INST]"
 
         # Call API
         payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": 1024,
-                "temperature": temperature,
-                "top_p": 0.95,
-                "do_sample": True
-            }
+            "model": self.model_id,
+            "prompt": prompt,
+            "temperature": temperature,
+            "max_tokens": 1024,
+            "top_p": 0.95
+            # Streaming enabled by default
         }
 
-        response = self._call_huggingface_api(payload)
-
-        # Extract only the model's response (remove the prompt)
-        if prompt in response:
-            response = response.replace(prompt, "").strip()
+        response = self._call_ollama_api(payload)
 
         return response

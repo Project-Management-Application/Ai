@@ -1,0 +1,14 @@
+{
+    "actors": [
+        "ministrat",
+        "Taunleu"
+    ],
+    "use_cases": [
+        "Consulter les taches",
+        "Gerer les vehicues",
+        "Valider les taches",
+        "Creer les taches",
+        "S'authentifier"
+    ],
+    "relationships": []
+}

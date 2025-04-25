@@ -1,0 +1,7 @@
+train: ../uml_dataset/images/train
+val: ../uml_dataset/images/val
+
+nc: 3  # number of classes, update if you have more
+names: ['actor', 'use_case', 'system']  # names of your classes, update if needed
+
+test: ../test/

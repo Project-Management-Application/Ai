@@ -1,0 +1,16 @@
+{
+    "actors": [
+        "nonymo"
+    ],
+    "use_cases": [
+        "ketPaymen",
+        "icket Booking",
+        "Availability",
+        "Response Time",
+        "Precision",
+        "User Registration",
+        "Consult of Portal",
+        "Security"
+    ],
+    "relationships": []
+}
